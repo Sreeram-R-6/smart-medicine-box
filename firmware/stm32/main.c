@@ -34,6 +34,7 @@ static uint32_t boot_screen_started,screen_tick;
 static uint8_t boot_screen_seen,boot_screen_done;
 static Menu menu;
 static Alarm alarms;
+static Analytics analytics;
 static RtcHealth rtc_health;
 static DeviceData stored_data;
 static uint32_t last_known_epoch,storage_changed,storage_writes,storage_errors;
@@ -199,6 +200,7 @@ static void rtc_set_poll(void){
  int valid=calendar_valid(&d)&&b[3]>=1&&b[3]<=7;
  for(unsigned i=0;i<7;i++)if(!bcdvalid(b[i]))valid=0;
  if(!valid){rtc_set_request.result=3;return;}
+ analytics_gap(&analytics);
  uint8_t ctrl,verify[7];
  if(HAL_I2C_Mem_Read(&hi2c1,0x68<<1,14,1,&ctrl,1,20)!=HAL_OK)goto failed;
  ctrl&=0x7f;
@@ -284,22 +286,24 @@ static void app_button(enum MenuButton button){
 }
 static void storage_service(void){
  uint32_t now=HAL_GetTick();
- if(!menu.persist_dirty&&!alarms.dirty)return;
+ if(!menu.persist_dirty&&!alarms.dirty&&!analytics.dirty)return;
  if(!storage_ok&&storage_changed&&(uint32_t)(now-storage_changed)<5000)return;
- if(!alarms.dirty&&!menu.persist_wait&&(uint32_t)(now-storage_changed)<1500)return;
+ if(!alarms.dirty&&!menu.persist_wait&&!analytics.critical&&(uint32_t)(now-storage_changed)<1500)return;
  buzzer_set_frequency(0); // Never stretch a driven note while flash erase stalls the CPU.
- storage_snapshot(&stored_data,&menu,&alarms,last_known_epoch);
+ storage_snapshot(&stored_data,&menu,&alarms,last_known_epoch);stored_data.analytics=analytics.data;
  int ok=storage_save(&stored_data);storage_changed=HAL_GetTick();storage_ok=(uint8_t)ok;
- if(ok){menu.persist_dirty=0;alarms.dirty=0;storage_writes++;}
+ if(ok){menu.persist_dirty=0;alarms.dirty=0;analytics.dirty=analytics.critical=0;storage_writes++;}
  else storage_errors++;
  menu_storage_result(&menu,ok);display_dirty=1;
  logmsg("STORE/INFO","commit=%d writes=%lu errors=%lu",ok,(unsigned long)storage_writes,(unsigned long)storage_errors);
 }
 static void alarm_service(void){
  MenuLive l=menu_live();if(!storage_ok)l.clock_trusted=0;
+ analytics_tick(&analytics,&l);if(rtc_health.fault||l.rtc_osf)analytics_gap(&analytics);
  uint32_t before=alarms.revision;alarm_poll(&alarms,&l,menu.schedules);
  AlarmEvent event;
  while(alarm_event(&alarms,&event)){
+  analytics_alarm(&analytics,&event,menu.schedules,&l);
   const enum MenuEventType types[]={EVENT_ALARM_DUE,EVENT_ALARM_ACK,EVENT_ALARM_MISSED,EVENT_DOWNTIME,EVENT_ALARM_QUIET,EVENT_CLOCK_GAP};
   menu_record(&menu,types[event.type],&l);
   MenuEvent *stored=&menu.history[(menu.history_head+MENU_HISTORY_SIZE-1)%MENU_HISTORY_SIZE];stored->mask=event.mask;stored->due=event.due;
@@ -336,16 +340,25 @@ static void remote_complete(unsigned result){
  remote_last=remote_pending;remote_last_signature=remote_signature;remote_last_result=(uint8_t)result;
  remote_pending=0;remote_reply_wait=1;
 }
+static uint32_t history_revision(void){return storage_crc(menu.history,sizeof menu.history)^(uint32_t)menu.history_head^((uint32_t)menu.history_count<<8);}
 static void remote_receive(void){
  const uint8_t *p=parser.bytes+9;unsigned n=parser.bytes[4],type=parser.bytes[3];uint32_t seq=ct_u32(parser.bytes+5);
  if(type==CT_HELLO)return;
- if(type==CT_HISTORY){
-  if(n!=1||p[0]>=menu.history_count){remote_result(seq,CT_INVALID);return;}
-  const MenuEvent *e=&menu.history[(menu.history_head+MENU_HISTORY_SIZE-1-p[0])%MENU_HISTORY_SIZE];
-  uint8_t b[16]={p[0],e->type,e->mask,e->dated};ct_put32(b+4,e->dated?calendar_seconds(&e->date):0);ct_put32(b+8,e->due);ct_put32(b+12,e->uptime);
-  sendcontrol(CT_EVENT,seq,b,sizeof b);return;
+ if(type==CT_ANALYTICS){
+  uint8_t b[64];unsigned size=0;
+  if(!n)size=analytics_packet(b,&analytics.data,0,0,0);
+  else if(n==6)size=analytics_packet(b,&analytics.data,p[0],p[1],ct_u32(p+2));
+  if(size){if(b[0]==0){ct_put32(b+size,history_revision());size+=4;}sendcontrol(CT_ANALYTICS,seq,b,size);}return;
  }
- if(type!=CT_SLOT&&type!=CT_SETTINGS&&type!=CT_CLOCK&&type!=CT_TEST){remote_result(seq,CT_INVALID);return;}
+ if(type==CT_HISTORY){
+  if((n!=1&&n!=5)||p[0]>=menu.history_count){remote_result(seq,CT_INVALID);return;}
+  if(n==5&&ct_u32(p+1)!=history_revision())return;
+  const MenuEvent *e=&menu.history[(menu.history_head+MENU_HISTORY_SIZE-1-p[0])%MENU_HISTORY_SIZE];
+  uint8_t b[20]={p[0],e->type,e->mask,e->dated};ct_put32(b+4,e->dated?calendar_seconds(&e->date):0);ct_put32(b+8,e->due);ct_put32(b+12,e->uptime);
+  if(n==5)ct_put32(b+16,history_revision());
+  sendcontrol(CT_EVENT,seq,b,n==5?20:16);return;
+ }
+ if(type!=CT_SLOT&&type!=CT_SETTINGS&&type!=CT_CLOCK&&type!=CT_TEST&&type!=CT_REPORT){remote_result(seq,CT_INVALID);return;}
  if(!seq){remote_result(seq,CT_INVALID);return;}
  uint16_t signature=med_crc(parser.bytes+3,n+6);
  if(seq==remote_last){remote_result(seq,signature==remote_last_signature?remote_last_result:CT_CONFLICT);return;}
@@ -369,6 +382,10 @@ static void remote_receive(void){
   b[3]=(uint8_t)(calendar_weekday(&d)+1);b[4]=(uint8_t)(d.day/10*16+d.day%10);b[5]=(uint8_t)(d.month/10*16+d.month%10);unsigned y=d.year-2000;b[6]=(uint8_t)(y/10*16+y%10);
   for(unsigned i=0;i<7;i++)rtc_set_request.data[i]=b[i];
   rtc_set_request.result=0;rtc_set_request.command=0x52544353u;
+ }else if(type==CT_REPORT){
+  if(n!=8){remote_result(seq,CT_INVALID);return;}
+  int result=analytics_report(&analytics,ct_u32(p+2),p[6],p[7],&l);
+  if(result<=0){remote_result(seq,result<0?CT_CONFLICT:CT_INVALID);return;}
  }else{
   if(n!=2){remote_result(seq,CT_INVALID);return;}
   alarm_test(&alarms,HAL_GetTick());menu_record(&menu,EVENT_TEST_ALARM,&l);
@@ -384,7 +401,7 @@ static void remote_poll(void){
    }
   }else if(remote_kind==CT_TEST)remote_complete(CT_OK);
   else if(!storage_ok)remote_complete(CT_STORAGE);
-  else if(!menu.persist_dirty&&!menu.persist_wait)remote_complete(CT_OK);
+  else if(!menu.persist_dirty&&!menu.persist_wait&&!analytics.dirty)remote_complete(CT_OK);
  }
  if(remote_reply_wait&&(txhead+1)%4!=txtail){remote_result(remote_last,remote_last_result);remote_reply_wait=0;}
  txpoll();
@@ -398,7 +415,7 @@ int main(void){
   for(unsigned i=0;i<6;i++){snprintf(menu.schedules[i].name,17,"REMINDER %u",i+1);menu.schedules[i].hour=hours[i];menu.schedules[i].minute=0;menu.schedules[i].enabled=1;menu.schedules[i].days=0x7f;}
  }else{storage_ok=0;menu.persist_dirty=0;}
 
- hardware();i2c_recover();logmsg("BOOT/INFO","Firmware=%s HSI=8MHz reset_flags=0x%08lx SAFE bring-up only",FW_VERSION,(unsigned long)RCC->CSR);__HAL_RCC_CLEAR_RESET_FLAGS();
+ hardware();i2c_recover();analytics_init(&analytics,loaded==1?&stored_data.analytics:0,&alarms,HAL_GetTick());logmsg("BOOT/INFO","Firmware=%s HSI=8MHz reset_flags=0x%08lx SAFE bring-up only",FW_VERSION,(unsigned long)RCC->CSR);__HAL_RCC_CLEAR_RESET_FLAGS();
  uint32_t now=HAL_GetTick(),heartbeat=now,rtc=now,stats=now;
  uint32_t changed[5]={0};int raw[5],stable[5];
  for(int i=0;i<5;i++){raw[i]=stable[i]=(i<4?HAL_GPIO_ReadPin(BUTTON_PORT,BUTTON_PINS[i]):HAL_GPIO_ReadPin(SENSOR_PORT,SENSOR_PIN));}
@@ -425,7 +442,9 @@ int main(void){
   if(v)sensor_diag.high_count++;else sensor_diag.low_count++;
   display_dirty=1;
   if(ENABLE_OPEN_CHIRP && menu.settings.sound && SENSOR_VERIFIED && !alarm_active_count(&alarms) && !alarms.test_active && v==SENSOR_OPEN_LEVEL)buzzer_opened();
-  MenuLive event_live=menu_live();menu_record(&menu,v==SENSOR_OPEN_LEVEL?EVENT_LID_OPEN:EVENT_LID_CLOSED,&event_live);
+  MenuLive event_live=menu_live();
+  if(v==SENSOR_OPEN_LEVEL){int reminder=0;for(unsigned g=0;g<MENU_SLOTS;g++)if(alarms.saved.groups[g].active&&alarms.saved.groups[g].armed)reminder=1;analytics_lid(&analytics,reminder,&event_live);}
+  menu_record(&menu,v==SENSOR_OPEN_LEVEL?EVENT_LID_OPEN:EVENT_LID_CLOSED,&event_live);
   logmsg("SENSOR/INFO","Stable raw=%d box=%s changes=%lu chirps=%lu",v,v==SENSOR_OPEN_LEVEL?"OPEN":"CLOSED",(unsigned long)sensor_diag.changes,(unsigned long)buzzer_diag.count);
  }
  }}
@@ -456,7 +475,7 @@ int main(void){
  remote_receive();
  }}
  if(linked&&(uint32_t)(now-lastpeer)>15000){linked=0;logmsg("UART/WARN","Link timeout");}
- if(linked&&(uint32_t)(now-heartbeat)>=1000){heartbeat=now;uint8_t b[200];MenuLive l=menu_live();unsigned n=remote_state(b,&menu,&l,alarms.test_active);sendcontrol(CT_STATE,0,b,n);}
+ if(linked&&(uint32_t)(now-heartbeat)>=1000){heartbeat=now;uint8_t b[200];MenuLive l=menu_live();unsigned n=remote_state(b,&menu,&l,alarms.test_active);sendcontrol(CT_STATE,0,b,n);n=analytics_packet(b,&analytics.data,0,0,0);ct_put32(b+n,history_revision());sendcontrol(CT_ANALYTICS,0,b,n+4);}
 
  if(ENABLE_I2C_DIAGNOSTICS && scan<120 && (uint32_t)(now-rtc)>=20){rtc=now;if(HAL_I2C_IsDeviceReady(&hi2c1,scan<<1,1,2)==HAL_OK)logmsg("I2C/INFO","Found 7-bit=0x%02X",scan);scan++;}
  if(ENABLE_I2C_DIAGNOSTICS && scan==120){oled_init();scan++;rtc=now-1000;}

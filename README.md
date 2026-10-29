@@ -4,7 +4,7 @@
 
 A working STM32 medicine-reminder prototype with an animated OLED interface and an ESP32-C3 local web dashboard. The STM32 runs the reminders independently; the ESP32 lets a phone view status and update the same saved configuration over UART.
 
-**STM32:** `1.1.0-oled-ui` · **ESP32:** `1.0.0-local-control` · **Build:** PlatformIO · **Cloud:** not required
+**STM32:** `1.2.0-activity` · **ESP32:** `1.1.0-activity` · **Build:** PlatformIO · **Cloud:** not required
 
 ![OLED screens rendered by the actual firmware](docs/assets/oled-ui-preview.png)
 
@@ -19,6 +19,7 @@ A working STM32 medicine-reminder prototype with an animated OLED interface and 
 - RTC health checks that pause new reminders when time is invalid, stopped or untrusted.
 - Persistent schedules, settings, reminder checkpoints and a 32-event history in alternating, CRC-checked flash banks.
 - A phone dashboard with live status and confirmed web-to-STM32 saves, including stale-edit detection and UART retries.
+- A measured reminder log, explicit taken/not-taken self-reports, response/ringing averages, opening counts between alarms, per-medicine totals and local CSV export. [Definitions and retention](docs/19-activity-dashboard.md).
 
 Opening the lid records acknowledgment of a box opening; it does not confirm that medicine was taken. This is a student hardware prototype, not a certified medical device.
 
@@ -70,6 +71,7 @@ No cloud backend, remote internet control or medicine-ingestion detection is imp
 | [Architecture](docs/architecture.md) | Main loop, storage, clock trust, alarms and source map |
 | [Protocol and HTTP API](docs/protocol-and-api.md) | UART frame layout, telemetry, commands and confirmed saves |
 | [OLED interface](docs/18-oled-ui.md) | Layouts, navigation, next-reminder calculation and previews |
+| [Activity dashboard](docs/19-activity-dashboard.md) | Sensor vs self-report, timing, opening counts, averages and storage migration |
 | [Validation and troubleshooting](docs/validation.md) | Reproducible tests, bench evidence and fault checks |
 | [Documentation index](docs/README.md) | Current guides and historical bring-up notes |
 

@@ -20,6 +20,14 @@ static uint32_t pageHits;
 static CtParser parser;
 static uint8_t snapshot[194],pendingFrame[CT_FRAME],events[32][16];
 static bool haveState,eventValid[32],pending;
+static uint8_t metricHeader[45],slotStats[8][40],doseRecords[24][48],openIntervals[8][20];
+static bool haveMetrics,slotValid[8],doseValid[24],intervalValid[8];
+static uint32_t doseReceived[24],metricPoll,historyGeneration;
+static unsigned metricCursor;
+static uint64_t little64(const uint8_t *p){uint64_t n=0;for(unsigned i=0;i<8;i++)n|=(uint64_t)p[i]<<(8*i);return n;}
+static uint32_t metricGeneration(){return ct_u32(metricHeader+2);}
+static void resetMetrics(){haveMetrics=false;memset(slotValid,0,sizeof slotValid);memset(doseValid,0,sizeof doseValid);memset(intervalValid,0,sizeof intervalValid);metricCursor=0;}
+
 static uint32_t lastState,heartbeat,lastSend,operation,sequence,lastHistory;
 static unsigned pendingSize,attempts,historyIndex,badframes;
 static int outcome=-1;
@@ -107,6 +115,38 @@ static void state(){
   s+="{\"type\":"+String(p[1])+",\"mask\":"+String(p[2])+",\"dated\":"+String(p[3])+",\"epoch\":"+String(ct_u32(p+4))+",\"due\":"+String(ct_u32(p+8))+",\"uptime\":"+String(ct_u32(p+12))+'}';}
  s+="],\"operation\":"+String(operation)+",\"pending\":"+(pending?"true":"false")+",\"result\":"+String(outcome)+",\"resultRevision\":"+String(resultRevision)+",\"badFrames\":"+String(badframes)+'}';json(200,s);
 }
+static void metrics(){
+ String s="{\"available\":";s+=haveMetrics?"true":"false";s+=",\"online\":";s+=fresh()?"true":"false";
+ if(haveMetrics){
+  s+=",\"generation\":"+String(metricGeneration())+",\"recordCount\":"+String(metricHeader[6])+",\"intervalCount\":"+String(metricHeader[7])+",\"trackingSince\":"+String(ct_u32(metricHeader+8))+",\"totalOpens\":"+String(ct_u32(metricHeader+12))+",\"extraOpens\":"+String(ct_u32(metricHeader+16))+",\"boundary\":"+String(ct_u32(metricHeader+20))+",\"intervalOpens\":"+String(ct_u32(metricHeader+24))+",\"intervalExtra\":"+String(ct_u32(metricHeader+28))+",\"intervalPartial\":"+String(metricHeader[32])+",\"untrustedOpens\":"+String(ct_u32(metricHeader+33))+",\"recordsEvicted\":"+String(ct_u32(metricHeader+37));
+  s+=",\"slots\":[";
+  for(unsigned i=0;i<8;i++){if(i)s+=',';if(!slotValid[i]){s+="null";continue;}const uint8_t *p=slotStats[i];
+   s+="{\"slot\":"+String(i)+",\"responseTotalMs\":"+String((double)little64(p),0)+",\"ringTotalMs\":"+String((double)little64(p+8),0)+",\"due\":"+String(ct_u32(p+16))+",\"opened\":"+String(ct_u32(p+20))+",\"taken\":"+String(ct_u32(p+24))+",\"notTaken\":"+String(ct_u32(p+28))+",\"responseCount\":"+String(ct_u32(p+32))+",\"ringCount\":"+String(ct_u32(p+36))+"}";}
+  s+=']';
+ }s+='}';json(200,s);
+}
+static void doses(){
+ unsigned offset=0,limit=8;
+ if((server.hasArg("offset")&&!number(server.arg("offset"),23,offset))||(server.hasArg("limit")&&!number(server.arg("limit"),8,limit))||!limit){json(400,"{\"error\":\"Invalid page\"}");return;}
+ String s="{\"generation\":"+String(metricGeneration())+",\"available\":"+(haveMetrics?"true":"false")+",\"records\":[";bool first=true;unsigned missing=0;
+ if(haveMetrics)for(unsigned i=offset;i<offset+limit&&i<metricHeader[6];i++){
+  if(!doseValid[i]){missing++;continue;}const uint8_t *p=doseRecords[i];if(!first)s+=',';first=false;
+  uint32_t ring=ct_u32(p+16);if((p[43]&4)&&fresh()){uint32_t elapsed=millis()-doseReceived[i];ring=0xffffffffu-ring<elapsed?0xffffffffu:ring+elapsed;}
+  s+="{\"id\":"+String(ct_u32(p))+",\"due\":"+String(ct_u32(p+4))+",\"opened\":"+String(ct_u32(p+8))+",\"responseMs\":"+String(ct_u32(p+12))+",\"ringMs\":"+String(ring)+",\"reportedAt\":"+String(ct_u32(p+20))+",\"name\":"+quote((const char*)p+24,16)+",\"slot\":"+String(p[41])+",\"report\":"+String(p[42])+",\"flags\":"+String(p[43])+",\"intervalOpens\":"+String(p[44]|p[45]<<8)+",\"intervalExtra\":"+String(p[46]|p[47]<<8)+"}";
+ }
+ s+="],\"missing\":"+String(missing)+"}";json(200,s);
+}
+static void intervals(){
+ String s="{\"generation\":"+String(metricGeneration())+",\"intervals\":[";bool first=true;unsigned missing=0;
+ if(haveMetrics)for(unsigned i=0;i<metricHeader[7];i++){if(!intervalValid[i]){missing++;continue;}const uint8_t *p=openIntervals[i];if(!first)s+=',';first=false;
+  s+="{\"start\":"+String(ct_u32(p))+",\"end\":"+String(ct_u32(p+4))+",\"opens\":"+String(ct_u32(p+8))+",\"extra\":"+String(ct_u32(p+12))+",\"partial\":"+String(ct_u32(p+16))+"}";}
+ s+="],\"missing\":"+String(missing)+"}";json(200,s);
+}
+static void report(){
+ if(!authorize())return;unsigned id,value,previous;
+ if(!number(server.arg("id"),0xffffffffu,id)||!id||!number(server.arg("report"),2,value)||!number(server.arg("previous"),2,previous)){json(400,"{\"error\":\"Invalid report\"}");return;}
+ uint8_t p[8]={0};ct_put32(p+2,id);p[6]=(uint8_t)value;p[7]=(uint8_t)previous;command(CT_REPORT,p,8);
+}
 static void slot(){
  if(!authorize())return;unsigned index,hour,minute,days,enabled;
  String name=server.arg("name");name.trim();name.toUpperCase();
@@ -144,6 +184,7 @@ void setup(){
   for(int i=0;i<addresses.num;i++){if(i)s+=',';s+="{\"ip\":"+quote(IPAddress(addresses.sta[i].ip.addr).toString().c_str(),32)+",\"rssi\":"+String((int)stations.sta[i].rssi)+"}";}
   s+="]}";json(200,s);
  });
+ server.on("/api/analytics",HTTP_GET,metrics);server.on("/api/doses",HTTP_GET,doses);server.on("/api/intervals",HTTP_GET,intervals);server.on("/api/report",HTTP_POST,report);
  server.on("/api/state",HTTP_GET,state);server.on("/api/slot",HTTP_POST,slot);server.on("/api/settings",HTTP_POST,settings);server.on("/api/clock",HTTP_POST,clockSet);
  server.on("/api/test",HTTP_POST,[]{if(authorize()){uint8_t p[2]={0};command(CT_TEST,p,2);}});
  server.onNotFound([]{if(server.method()==HTTP_GET&&!server.uri().startsWith("/api/")){server.sendHeader("Location","http://192.168.4.1/");server.send(302,"text/plain","Open http://192.168.4.1/");}else json(404,"{\"error\":\"Not found\"}");});server.begin();
@@ -155,16 +196,34 @@ void loop(){
   unsigned type=parser.bytes[3],n=parser.bytes[4];uint32_t seq=ct_u32(parser.bytes+5);const uint8_t *p=parser.bytes+9;
   if(type==CT_STATE&&n==sizeof snapshot){
    bool restart=haveState&&ct_u32(p+180)<ct_u32(snapshot+180);
+   if(restart)resetMetrics();
    if(!haveState||restart||p[192]!=snapshot[192]){memset(eventValid,0,sizeof eventValid);historyIndex=0;}
    memcpy(snapshot,p,n);haveState=true;lastState=now;
   }else if(type==CT_RESULT&&n==3&&pending&&seq==operation){outcome=p[0];resultRevision=p[1]|p[2]<<8;pending=false;}
-  else if(type==CT_EVENT&&n==16&&p[0]<32){memcpy(events[p[0]],p,16);eventValid[p[0]]=true;}
+  else if(type==CT_EVENT&&(n==16||n==20)&&p[0]<32&&(!haveMetrics||(n==20&&ct_u32(p+16)==historyGeneration))){memcpy(events[p[0]],p,16);eventValid[p[0]]=true;}
+  else if(type==CT_ANALYTICS&&n>=6){
+   if(p[0]==0&&n==45&&p[6]<=24&&p[7]<=8){
+    uint32_t gen=ct_u32(p+2),history=ct_u32(p+41);
+    if(!haveMetrics||gen!=metricGeneration()){memset(slotValid,0,sizeof slotValid);memset(doseValid,0,sizeof doseValid);memset(intervalValid,0,sizeof intervalValid);metricCursor=0;}
+    if(history!=historyGeneration){memset(eventValid,0,sizeof eventValid);historyIndex=0;historyGeneration=history;}
+    memcpy(metricHeader,p,45);haveMetrics=true;
+   }else if(haveMetrics&&ct_u32(p+2)==metricGeneration()){
+    if(p[0]==1&&p[1]<8&&n==46){memcpy(slotStats[p[1]],p+6,40);slotValid[p[1]]=true;}
+    if(p[0]==2&&p[1]<24&&n==54){memcpy(doseRecords[p[1]],p+6,48);doseValid[p[1]]=true;doseReceived[p[1]]=now;}
+    if(p[0]==3&&p[1]<8&&n==26){memcpy(openIntervals[p[1]],p+6,20);intervalValid[p[1]]=true;}
+   }
+  }
  }
  if((uint32_t)(now-heartbeat)>=1000){heartbeat=now;sendFrame(CT_HELLO,0,nullptr,0);}
  if(pending&&(uint32_t)(now-lastSend)>=2000){
   if(attempts>=5){pending=false;outcome=6;}else{bridge.write(pendingFrame,pendingSize);lastSend=now;attempts++;}
  }
- if(fresh()&&!pending&&snapshot[192]&&(uint32_t)(now-lastHistory)>=120){lastHistory=now;uint8_t i=(uint8_t)(historyIndex++%snapshot[192]);sendFrame(CT_HISTORY,0,&i,1);}
+ if(fresh()&&!pending&&snapshot[192]&&(uint32_t)(now-lastHistory)>=120){lastHistory=now;uint8_t b[5]={(uint8_t)(historyIndex++%snapshot[192])};ct_put32(b+1,historyGeneration);sendFrame(CT_HISTORY,0,b,haveMetrics?5:1);}
+ if(fresh()&&!pending&&(uint32_t)(now-metricPoll)>=70){metricPoll=now;
+  if(!haveMetrics)sendFrame(CT_ANALYTICS,0,nullptr,0);
+  else{unsigned cursor=metricCursor++%40,mode=cursor<8?1:cursor<32?2:3,index=cursor<8?cursor:cursor<32?cursor-8:cursor-32;
+   if((mode==1)||(mode==2&&index<metricHeader[6])||(mode==3&&index<metricHeader[7])){uint8_t b[6]={(uint8_t)mode,(uint8_t)index};ct_put32(b+2,metricGeneration());sendFrame(CT_ANALYTICS,0,b,6);}}
+ }
  static uint32_t apCheck;
  if((uint32_t)(now-apCheck)>10000){apCheck=now;if(!apConfigured||!(WiFi.getMode()&WIFI_AP))startAccessPoint();}
  dns.processNextRequest();usbConsole();server.handleClient();delay(1);

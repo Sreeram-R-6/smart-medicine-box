@@ -1,6 +1,6 @@
 #pragma once
 #include "stm32f1xx_hal.h"
-#define FW_VERSION "1.1.0-oled-ui"
+#define FW_VERSION "1.2.0-activity"
 #define BUTTON_PORT GPIOA
 static const uint16_t BUTTON_PINS[4] = {GPIO_PIN_0,GPIO_PIN_1,GPIO_PIN_4,GPIO_PIN_5};
 #define SENSOR_PORT GPIOB

@@ -48,7 +48,7 @@ The test alarm follows the same repeating sound/stop interaction without creatin
 
 Each bank has magic, schema, sequence, length, payload CRC32 and a commit marker. Saves erase the inactive bank, program/verify the payload and write the commit marker last. Startup selects the newest valid bank or falls back to the older valid bank. If both nonblank banks are corrupt, the firmware does not silently enable a fresh set of example alarms.
 
-Payload schema 1 stores schedule/settings data, 32 events, alarm checkpoints and last-known time. Ordinary history writes are coalesced, so a sudden power cut can lose a newly added ordinary lid event. A confirmed schedule save waits for a real flash commit. Schema migration is not implemented; review the serialized layout before changing its structs.
+Payload schema 2 preserves the 2072-byte schema-1 prefix and appends persistent activity analytics: 24 medicine records, eight intervals and lifetime slot totals. Valid schema-1 banks are decoded without losing schedules/history/settings; old timing is not invented. See [activity tracking](19-activity-dashboard.md). Ordinary history writes are coalesced, so a sudden power cut can lose a newly added ordinary lid event. Confirmed schedule/report saves wait for a real flash commit. Further format changes require an explicit migration plan.
 
 ## ESP32 and consistency
 
@@ -56,7 +56,7 @@ The ESP32 serves a self-contained HTML page, local DNS/captive-portal responses 
 
 Conflicting local OLED drafts reject remote writes as busy. Retries use an in-memory last-result cache on STM32; the cache does not survive a controller reboot. A lost response can leave an unknown result, which must be reconciled from current state. A stale revision is rejected rather than treated as a confirmed mutation.
 
-History is polled from the STM32 ring. During a refresh with concurrent events, temporarily partial or repeated entries can appear until the next polling pass; history transfer is not an atomic snapshot protocol.
+History and analytics are polled with generation tags. The receiver rejects mismatched generations while rings rotate and displays loading/stale states until a consistent pass completes. The legacy untagged history request remains supported for older clients.
 
 ## Source map
 
@@ -67,6 +67,7 @@ History is polled from the STM32 ring. During a refresh with concurrent events, 
 | `screen.c`, `upcoming.c` | Pixel rendering, boot frames and next reminder |
 | `calendar.c`, `rtc_health.c` | Calendar arithmetic and trust checks |
 | `alarm.c` | Occurrence groups, deduplication, melody and acknowledgment |
+| `analytics.c` | Persistent measurements, opening intervals and explicit user reports |
 | `persistence.c`, `storage.c` | Validation/CRC format and HAL flash operations |
 | `remote.c` | Wire configuration validation and telemetry packing |
 | `firmware/esp32/main.cpp` | AP, HTTP, UART bridge and USB maintenance transport |

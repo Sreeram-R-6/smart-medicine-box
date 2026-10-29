@@ -6,7 +6,7 @@
 /* v2: A5 5A 02 type length seqLE32 payload CRC16 (version through payload). */
 #define CT_MAX 208
 #define CT_FRAME (CT_MAX+11)
-enum { CT_HELLO=16,CT_STATE,CT_SLOT,CT_SETTINGS,CT_CLOCK,CT_TEST,CT_RESULT,CT_HISTORY,CT_EVENT };
+enum { CT_HELLO=16,CT_STATE,CT_SLOT,CT_SETTINGS,CT_CLOCK,CT_TEST,CT_RESULT,CT_HISTORY,CT_EVENT,CT_ANALYTICS,CT_REPORT };
 enum { CT_OK=0,CT_INVALID=1,CT_BUSY=2,CT_CONFLICT=3,CT_STORAGE=4,CT_RTC=5 };
 typedef struct {uint8_t bytes[CT_FRAME];unsigned used;uint32_t last;} CtParser;
 static inline uint32_t ct_u32(const uint8_t *p){return (uint32_t)p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24;}

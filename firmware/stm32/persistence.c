@@ -1,12 +1,13 @@
 #include "persistence.h"
 #include <string.h>
 _Static_assert(sizeof(StorageHeader)+sizeof(DeviceData)<=STORAGE_BANK_BYTES,"Persistent data exceeds reserved bank");
+_Static_assert(offsetof(DeviceData,analytics)==STORAGE_LEGACY_BYTES,"Legacy storage prefix changed");
 uint32_t storage_crc(const void *p,size_t count){
  const uint8_t *b=p;uint32_t crc=0xffffffffu;
  while(count--){crc^=*b++;for(unsigned bit=0;bit<8;bit++)crc=(crc>>1)^((0u-(crc&1))&0xedb88320u);}
  return ~crc;
 }
-int storage_data_valid(const DeviceData *d){
+static int storage_base_valid(const DeviceData *d){
  if(d->last_known_epoch>3155759999u||d->alarms.cursor>3155759999u)return 0;
  if(d->settings.sound>1||d->settings.brightness<1||d->settings.brightness>10||d->settings.duration_ms<100||d->settings.duration_ms>2000||d->settings.duration_ms%100)return 0;
  if(d->history_head>=MENU_HISTORY_SIZE||d->history_count>MENU_HISTORY_SIZE)return 0;
@@ -22,13 +23,19 @@ int storage_data_valid(const DeviceData *d){
   d->history[i].due>3155759999u||(d->history[i].dated&&!calendar_valid(&d->history[i].date)))return 0;
  return 1;
 }
+int storage_data_valid(const DeviceData *d){return storage_base_valid(d)&&analytics_valid(&d->analytics);}
 int storage_bank_valid(const void *bank,StorageHeader *out){
  StorageHeader h;memcpy(&h,bank,sizeof h);
- if(h.magic!=STORAGE_MAGIC||h.schema!=STORAGE_SCHEMA||h.commit!=STORAGE_COMMIT||h.length!=sizeof(DeviceData))return 0;
+ int legacy=h.schema==1&&h.length==STORAGE_LEGACY_BYTES;
+ if(h.magic!=STORAGE_MAGIC||h.commit!=STORAGE_COMMIT||(!legacy&&(h.schema!=STORAGE_SCHEMA||h.length!=sizeof(DeviceData))))return 0;
  const uint8_t *payload=(const uint8_t *)bank+sizeof h;
- if(storage_crc(payload,sizeof(DeviceData))!=h.crc||!storage_data_valid((const DeviceData *)payload))return 0;
+ if(storage_crc(payload,h.length)!=h.crc||!storage_base_valid((const DeviceData *)payload)||(!legacy&&!analytics_valid(&((const DeviceData *)payload)->analytics)))return 0;
  if(out)*out=h;
  return 1;
+}
+int storage_decode(const void *bank,DeviceData *d){
+ StorageHeader h;if(!storage_bank_valid(bank,&h))return 0;
+ memset(d,0,sizeof *d);memcpy(d,(const uint8_t *)bank+sizeof h,h.length);return 1;
 }
 int storage_choose(const void *b0,const void *b1){
  StorageHeader h0,h1;int v0=storage_bank_valid(b0,&h0),v1=storage_bank_valid(b1,&h1);

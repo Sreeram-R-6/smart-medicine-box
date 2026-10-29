@@ -20,6 +20,7 @@ The C runner uses GCC by default; pass `--cc clang` or a full executable path if
 | Alarm/storage/RTC | Calendar round trips, duplicate suppression, groups, fresh lid cycles, reboot/clock gaps, repeating melody, trust failures, CRC, torn commit/fallback and sequence wrap |
 | Control | Every v2 payload length, per-byte corruption, parser timeout, wire packing, configuration revision and boundary validation |
 | Screen | Next alarm across midnight/weekdays, grouped names, end-of-calendar bounds, buffer guards, every view and 23 pixel previews |
+| Analytics | Persistent response/ringing/interval counters, report conflicts, interruptions, bounded retention, generation matching and schema-1 upgrade |
 | Dashboard | Actual shipped script with DOM/network fixtures: safe text rendering, weekday editor, revision/token POST, ACK/readback success and offline controls |
 
 GitHub Actions runs the host checks and compiles both targets. It never flashes connected hardware. A green CI run does not validate electrical wiring, radio range, sound, battery retention or actual pill taking.
@@ -37,6 +38,7 @@ The following checks were performed on the attached prototype during development
 - A phone connected to MedBox and opened the dashboard after explicit AP addressing and captive-portal support were added.
 - The user confirmed OLED boot animation/menu navigation. A captured display framebuffer showed the next saved reminder's time and name.
 - No UART frame, RTC read or OLED write errors were reported during the final integration checks.
+- Activity firmware preserved the existing schema-1 schedules/settings on upgrade. A real ACTIVITY TEST reminder measured 13 seconds to opening and 12,295 ms ringing; report changes committed/read back, extra openings counted, and a restart retained measurements and original configuration. See [measurement definitions](19-activity-dashboard.md).
 
 These are development observations, not continuous certification. The RTC backup test **failed**: the battery measured 1.8 V and time reset to year 2000. Its replacement/power-off retention test is still required. Earlier notes include intermediate failures and obsolete firmware behavior; use this guide for current status.
 

@@ -29,6 +29,8 @@ CRC covers bytes 2 through the final payload byte, **N + 7 bytes**. Total frame 
 | 22 | RESULT | Result byte, current config CRC16 |
 | 23 | HISTORY | One-byte newest-first history index |
 | 24 | EVENT | Index, event type, slot mask, dated flag, epoch, due epoch, uptime |
+| 25 | ANALYTICS | Empty request for metadata, or mode/index/generation; tagged metadata, slot totals, dose records or intervals |
+| 26 | REPORT | Expected config CRC16, uint32 record ID, new report byte, previous report byte |
 
 Schedule wire format is **17 name bytes** (NUL-terminated, at most 16 visible uppercase letters/numbers/spaces), then one byte each for hour, minute, weekday mask and enabled. Monday is bit 0, Sunday bit 6. Settings are opening-tone enabled, brightness 1–10, and uint16 opening-tone duration 100–2000 ms in 100 ms steps.
 
@@ -67,6 +69,10 @@ The ESP32 also reports local result **6** when retries end without an acknowledg
 
 Schedule/settings RESULT success follows a real flash save; clock success follows write/tick verification. A failed storage attempt can leave changed values in RAM while later persistence retries run. Do not interpret a failed or timed-out save as a guaranteed rollback.
 
+Manual report success also waits for a real flash commit. Report status 0 is unknown, 1 is user-reported taken and 2 is user-reported not taken. A stale previous report is rejected as a conflict. Reports do not acknowledge the physical alarm.
+
+Activity modes: 0 metadata (45-byte response including history generation), 1 per-slot totals (46 bytes), 2 reminder record (54 bytes), 3 completed interval (26 bytes). Each tagged reply begins with mode, index and uint32 analytics generation. A six-byte request carries the same fields; mismatched generations are not returned. The STATE payload remains 194 bytes. New clients request history with index + uint32 history generation, and receive the original 16 bytes plus that generation; old one-byte requests/16-byte replies remain supported. See [activity definitions and layout](19-activity-dashboard.md).
+
 ## HTTP routes
 
 Base URL: **http://192.168.4.1** on the MedBox network. There is no TLS endpoint. Responses are JSON except the dashboard/captive portal routes.
@@ -80,6 +86,10 @@ Base URL: **http://192.168.4.1** on the MedBox network. There is no TLS endpoint
 | POST | `/api/settings` | Set opening tone/display settings |
 | POST | `/api/clock` | Set/verify the RTC clock |
 | POST | `/api/test` | Start repeating test alarm or show existing medicine alarms |
+| GET | `/api/analytics` | Activity metadata and cumulative per-medicine totals |
+| GET | `/api/doses?offset=0&limit=8` | Up to eight retained reminder measurements per page |
+| GET | `/api/intervals` | Eight retained completed alarm intervals |
+| POST | `/api/report` | Save an explicit medicine self-report |
 
 POST content type is `application/x-www-form-urlencoded`. Supply **`X-Medbox-Token`** from `/api/state` and the current **`revision`** field. These protect against accidental cross-origin form writes and stale drafts; they are not user authentication. Wi-Fi network access controls access to the page/token.
 
@@ -91,6 +101,7 @@ POST content type is `application/x-www-form-urlencoded`. Supply **`X-Medbox-Tok
 | `/api/settings` | `sound` 0/1; `brightness` 1–10; `duration` 100–2000, divisible by 100 |
 | `/api/clock` | `epoch` 0–3155759999 in the civil epoch described above |
 | `/api/test` | None |
+| `/api/report` | `id` retained record ID; `report` 0/1/2; `previous` expected current report 0/1/2 |
 
 Names are trimmed and uppercased by the ESP32. Even disabled slots require at least one selected weekday. `sound=0` disables only the opening information tone; medicine/test alarms remain audible.
 

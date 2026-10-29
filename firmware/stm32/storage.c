@@ -10,7 +10,7 @@ int storage_load(DeviceData *d){
   for(unsigned n=0;n<2;n++)for(unsigned i=0;i<STORAGE_BANK_BYTES;i++)if(bank(n)[i]!=0xff)blank=0;
   return blank?0:-1;
  }
- memcpy(d,bank((unsigned)selected)+sizeof(StorageHeader),sizeof *d);return 1;
+ return storage_decode(bank((unsigned)selected),d)?1:-1;
 }
 static int program_bytes(uint32_t address,const uint8_t *bytes,unsigned count){
  for(unsigned i=0;i<count;i+=2){

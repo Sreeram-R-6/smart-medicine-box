@@ -12,7 +12,7 @@ These execute the shared diagnostic parser. Current application checks:
 ```powershell
 gcc -std=c11 -Wall -Wextra -Werror -Ifirmware/stm32 firmware/stm32/menu.c tests/menu_test.c -o .pio/menu_test.exe
 ./.pio/menu_test.exe
-gcc -std=c11 -Wall -Wextra -Werror -Ifirmware/stm32 firmware/stm32/menu.c firmware/stm32/calendar.c firmware/stm32/alarm.c firmware/stm32/rtc_health.c firmware/stm32/persistence.c tests/alarm_test.c -o .pio/alarm_test.exe
+gcc -std=c11 -Wall -Wextra -Werror -Ishared -Ifirmware/stm32 firmware/stm32/menu.c firmware/stm32/calendar.c firmware/stm32/alarm.c firmware/stm32/rtc_health.c firmware/stm32/persistence.c firmware/stm32/analytics.c tests/alarm_test.c -o .pio/alarm_test.exe
 ./.pio/alarm_test.exe
 gcc -std=c11 -Wall -Wextra -Werror -Ishared -Ifirmware/stm32 firmware/stm32/menu.c firmware/stm32/calendar.c firmware/stm32/remote.c tests/control_test.c -o .pio/control_test.exe
 ./.pio/control_test.exe
@@ -41,3 +41,5 @@ python tools/render_oled_previews.py
 ```
 
 This checks upcoming reminders across weekday/midnight boundaries, supported-calendar bounds and grouped alarms, guards framebuffer memory, and produces 23 exact pixel previews for visual review.
+
+The recommended `python tools/test_host.py` entry point runs all six C suites, including `analytics_test.c`. Activity checks cover real-event timing/count semantics, grouping/deduplication, manual-report conflicts, reboot uncertainty, record rotation, generation matching and schema-1 migration. Dashboard fixtures additionally verify sample-aware averages, lid/report separation, filtering and disabled stale-record controls.

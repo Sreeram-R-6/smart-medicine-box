@@ -1,0 +1,13 @@
+flowchart LR
+ RTC["DS3231 SCL/SDA"] ---|"PB6/PB7; verify pull-ups"| STM["STM32F103C8T6"]
+ OLED["OLED controller TBD"] -.->|"PB6/PB7; conditional"| STM
+ BTN["LEFT PA0 / RIGHT PA1 / BACK PA4 / OK PA5"] --> STM
+ SENSOR["FC-51 OUT: voltage/polarity TBD"] -.->|PB12| STM
+ STM -.->|"PB0 driver TBD"| BUZZ["MH-FMD active-low"]
+ STM -->|"PB8/PB9 through separate 680 ohm"| LED["Green / Red"]
+ STM -->|"PA2 TX to GPIO4 RX candidate"| ESP["ESP32-C3 SuperMini"]
+ ESP -->|"GPIO5 TX to PA3 RX candidate"| STM
+ STM ---|"Common GND; no joined regulators"| ESP
+ ESP --> NET["Wi-Fi; backend pending"]
+ PROBE["ST-Link connector verification"] -->|"PA13 SWDIO / PA14 SWCLK / GND"| STM
+ STM -->|"PA9 TX / GND"| LOG["3.3 V USB-TTL RX / GND"]

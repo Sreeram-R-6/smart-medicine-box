@@ -73,10 +73,10 @@ Connect verified OUT to B12 and GND to common ground. Calibrate the FC-51 adjust
 
 | Stable OUT | Meaning |
 | --- | --- |
-| 0 / LOW | Lid target detected: closed |
-| 1 / HIGH | Target absent: open |
+| 0 / LOW | Open (current rewired assembly) |
+| 1 / HIGH | Closed (current rewired assembly) |
 
-The firmware filters transitions for 100 ms. Close/open the box several times and compare the sensor indicator with OLED lid status. If the module indicator changes but OLED does not, check OUT wiring, common ground and measured logic levels. A reversed physical arrangement requires changing `SENSOR_OPEN_LEVEL` after calibration.
+The firmware filters transitions for 100 ms. The mapping was reversed after the user observed the opening chirp on physical closing after rewiring. Opening chirps, alarm acknowledgment, lid status and opening counters all share `SENSOR_OPEN_LEVEL`. Close/open the box several times to verify the new physical mapping. If the module indicator changes but firmware state does not, check OUT wiring, common ground and measured logic levels.
 
 ## Buzzer
 

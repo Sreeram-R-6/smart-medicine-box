@@ -7,9 +7,9 @@ static const uint16_t BUTTON_PINS[4] = {GPIO_PIN_0,GPIO_PIN_1,GPIO_PIN_4,GPIO_PI
 #define SENSOR_PIN GPIO_PIN_12
 // FC-51 nominal active-low detection; verify against the module indicator.
 #define SENSOR_DETECT_LEVEL GPIO_PIN_RESET
-// Rewired assembly: user observed the previous opening chirp on closing.
-// Active-low detection now corresponds to OPEN; HIGH corresponds to CLOSED.
-#define SENSOR_OPEN_LEVEL GPIO_PIN_RESET
+// Two-position physical calibration: closed reads LOW, open reads HIGH.
+// Opening chirps and alarm acknowledgment use the LOW -> HIGH transition.
+#define SENSOR_OPEN_LEVEL GPIO_PIN_SET
 #define SENSOR_VERIFIED 1
 #define BUZZER_PORT GPIOB
 #define BUZZER_PIN GPIO_PIN_0

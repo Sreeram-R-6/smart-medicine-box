@@ -73,10 +73,10 @@ Connect verified OUT to B12 and GND to common ground. Calibrate the FC-51 adjust
 
 | Stable OUT | Meaning |
 | --- | --- |
-| 0 / LOW | Open (current rewired assembly) |
-| 1 / HIGH | Closed (current rewired assembly) |
+| 0 / LOW | Closed (measured with the box held closed) |
+| 1 / HIGH | Open (measured with the box held open) |
 
-The firmware filters transitions for 100 ms. The mapping was reversed after the user observed the opening chirp on physical closing after rewiring. Opening chirps, alarm acknowledgment, lid status and opening counters all share `SENSOR_OPEN_LEVEL`. Close/open the box several times to verify the new physical mapping. If the module indicator changes but firmware state does not, check OUT wiring, common ground and measured logic levels.
+The firmware filters transitions for 100 ms. A two-position physical check supersedes the earlier inferred polarity: with the box held closed, the sensor read LOW; held open, it read HIGH. Opening chirps, alarm acknowledgment, lid status and opening counters all share `SENSOR_OPEN_LEVEL`. Repeat this two-position calibration if the sensor arrangement changes. If the module indicator changes but firmware state does not, check OUT wiring, common ground and measured logic levels.
 
 ## Buzzer
 

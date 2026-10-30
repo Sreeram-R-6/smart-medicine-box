@@ -18,6 +18,7 @@ OLED initialization sends command/argument pairs separately. Each framebuffer ch
 - Physical button and lid events reached the firmware; the BACK+OK combination activated its test alarm. Firmware activity does not verify audible sound.
 - The RTC accepted a current India-time synchronization. A later capture showed trusted, advancing time with OSF clear and zero read failures in that run. One subsequent sample counted a transient read failure and recovered trust.
 - **OLED acceptance is still failing on the rewired assembly.** Address/data acknowledgments are intermittent, and the latest captured run had no completed new framebuffer. A lit panel or retained Home image is not proof of fresh updates. Module supply, jumper continuity, pull-ups, connector contacts and the display itself still need electrical inspection. Firmware changes do not certify those connections.
+- A final set of three warm resets retained an advancing RTC calendar and had zero RTC read errors in each short sample, but OSF returned and the clock was not trusted. The OLED failed initialization on all three resets. Thus the successful powered synchronization does not establish dependable boot-time clock trust either. Saved configuration checksum remained unchanged.
 
 Earlier successful OLED demonstrations remain historical evidence for the previous assembly. They must not be treated as a pass for the current wiring. No claim of reliable every-boot operation is made while these failures remain.
 

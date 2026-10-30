@@ -8,6 +8,8 @@ Raw-write diagnostics now identify whether a failed byte is the address, control
 
 The user measured 3.3 V at the STM32 and 2.8 V across the OLED connector, including after reporting direct power wires. That discrepancy is recorded as an unresolved electrical observation, not a confirmed diagnosis of a particular component. The user also reported garbled/static pixels. Reliable OLED acceptance and every-boot operation remain **unverified/failing**; reprogramming has not established a hardware pass.
 
+After a two-position lid check (closed LOW, open HIGH), the corrected mapping was flashed and the user confirmed the buzzer sounds on opening. The OLED remained blank. A subsequent GPIO check configured B6/B7 as open-drain, released both outputs and waited 5 ms: both input levels remained LOW. Both RTC reads and OLED detection failed in that state. Disconnecting bus branches with all board power off is the next isolation step; firmware cannot transmit while SCL and SDA remain held LOW.
+
 ## Firmware 1.2.1-recovery
 
 After the assembly was rewired, both the RTC and OLED transfers failed with the prior image. The original image was read back and matched the rebuilt binary exactly; this was not an accidental firmware overwrite. The STM32 supply measured approximately 3.29 V at the programmer, which does **not** measure the supply at either module.

@@ -6,11 +6,12 @@
 #include "rtc_health.h"
 #include "remote.h"
 #include "screen.h"
+#include "soft_i2c.h"
 #include <stdio.h>
 #include <stdarg.h>
 
 UART_HandleTypeDef huart1,huart2;
-I2C_HandleTypeDef hi2c1;
+static uint32_t i2c_error;
 static uint8_t rxbyte,rxring[512];
 static volatile unsigned rxhead,rxtail,rxoverflow,rxerror;
 static char logbuf[1024];
@@ -114,6 +115,18 @@ static void uartinit(UART_HandleTypeDef *h,USART_TypeDef *inst){
  h->Init.Parity=UART_PARITY_NONE;h->Init.Mode=UART_MODE_TX_RX;h->Init.HwFlowCtl=UART_HWCONTROL_NONE;h->Init.OverSampling=UART_OVERSAMPLING_16;
  if(HAL_UART_Init(h)!=HAL_OK)fatal();
 }
+// GPIO open-drain transport avoids the F1 I2C peripheral's START/BUSY lockups.
+static void bus_scl(int release){if(release)GPIOB->BSRR=GPIO_PIN_6;else GPIOB->BRR=GPIO_PIN_6;}
+static void bus_sda(int release){if(release)GPIOB->BSRR=GPIO_PIN_7;else GPIOB->BRR=GPIO_PIN_7;}
+static int bus_read_scl(void){return !!(GPIOB->IDR&GPIO_PIN_6);}
+static int bus_read_sda(void){return !!(GPIOB->IDR&GPIO_PIN_7);}
+static void bus_delay(void){uint32_t start=DWT->CYCCNT;while((uint32_t)(DWT->CYCCNT-start)<320u){__NOP();}}
+static const SoftI2c bus={bus_scl,bus_sda,bus_read_scl,bus_read_sda,bus_delay};
+static int bus_result(int result){i2c_error=(uint32_t)result;return result==SOFT_I2C_OK?HAL_OK:HAL_ERROR;}
+static int bus_probe(uint8_t address){return bus_result(soft_i2c_write(&bus,address,0,0));}
+static int bus_write(uint8_t address,const uint8_t *p,unsigned n){return bus_result(soft_i2c_write(&bus,address,p,n));}
+static int bus_read_register(uint8_t address,uint8_t reg,uint8_t *p,unsigned n){return bus_result(soft_i2c_read_register(&bus,address,reg,p,n));}
+static int bus_write_register(uint8_t address,uint8_t reg,const uint8_t *p,unsigned n){return bus_result(soft_i2c_write_register(&bus,address,reg,p,n));}
 static void hardware(void){
  HAL_Init(); // HSI 8 MHz avoids assuming the board crystal is correct.
  __HAL_RCC_GPIOA_CLK_ENABLE();__HAL_RCC_GPIOB_CLK_ENABLE();__HAL_RCC_AFIO_CLK_ENABLE();
@@ -128,35 +141,19 @@ static void hardware(void){
  g.Pin=SENSOR_PIN;g.Pull=GPIO_PULLUP;HAL_GPIO_Init(GPIOB,&g);
  g.Pin=GPIO_PIN_2|GPIO_PIN_9;g.Mode=GPIO_MODE_AF_PP;g.Speed=GPIO_SPEED_FREQ_HIGH;HAL_GPIO_Init(GPIOA,&g);
  g.Pin=GPIO_PIN_3|GPIO_PIN_10;g.Mode=GPIO_MODE_INPUT;g.Pull=GPIO_PULLUP;HAL_GPIO_Init(GPIOA,&g);
- g.Pin=GPIO_PIN_6|GPIO_PIN_7;g.Mode=GPIO_MODE_AF_OD;g.Pull=GPIO_NOPULL;HAL_GPIO_Init(GPIOB,&g);
+ GPIOB->BSRR=GPIO_PIN_6|GPIO_PIN_7;
+ g.Pin=GPIO_PIN_6|GPIO_PIN_7;g.Mode=GPIO_MODE_OUTPUT_OD;g.Pull=GPIO_NOPULL;g.Speed=GPIO_SPEED_FREQ_LOW;HAL_GPIO_Init(GPIOB,&g);
+ CoreDebug->DEMCR|=CoreDebug_DEMCR_TRCENA_Msk;DWT->CYCCNT=0;DWT->CTRL|=DWT_CTRL_CYCCNTENA_Msk;
  uartinit(&huart1,USART1);uartinit(&huart2,USART2);
  HAL_NVIC_SetPriority(USART1_IRQn,2,0);HAL_NVIC_EnableIRQ(USART1_IRQn);
  HAL_NVIC_SetPriority(USART2_IRQn,1,0);HAL_NVIC_EnableIRQ(USART2_IRQn);
- // Conservative speed for the shared breadboard bus and display wiring.
- hi2c1.Instance=I2C1;hi2c1.Init.ClockSpeed=25000;hi2c1.Init.DutyCycle=I2C_DUTYCYCLE_2;
- hi2c1.Init.AddressingMode=I2C_ADDRESSINGMODE_7BIT;hi2c1.Init.DualAddressMode=I2C_DUALADDRESS_DISABLE;
- hi2c1.Init.GeneralCallMode=I2C_GENERALCALL_DISABLE;hi2c1.Init.NoStretchMode=I2C_NOSTRETCH_DISABLE;
- if(HAL_I2C_Init(&hi2c1)!=HAL_OK)fatal();
+ // I2C1 remains disabled; the GPIO transport owns B6/B7.
+ __HAL_RCC_I2C1_FORCE_RESET();__HAL_RCC_I2C1_RELEASE_RESET();
  HAL_UART_Receive_IT(&huart2,&rxbyte,1);
 }
 static uint32_t i2c_recoveries;
 static void i2c_recover(void){
- // Release a slave left mid-byte after reset, then reset the F1 I2C engine.
- __HAL_I2C_DISABLE(&hi2c1);
- GPIO_InitTypeDef g={0};g.Pin=GPIO_PIN_6|GPIO_PIN_7;g.Mode=GPIO_MODE_OUTPUT_OD;g.Speed=GPIO_SPEED_FREQ_LOW;
- HAL_GPIO_WritePin(GPIOB,g.Pin,GPIO_PIN_SET);HAL_GPIO_Init(GPIOB,&g);HAL_Delay(1);
- for(unsigned i=0;i<9;i++){
-  HAL_GPIO_WritePin(GPIOB,GPIO_PIN_6,GPIO_PIN_RESET);HAL_Delay(1);
-  HAL_GPIO_WritePin(GPIOB,GPIO_PIN_6,GPIO_PIN_SET);HAL_Delay(1);
- }
- // STOP transition also refreshes the F1 analog input filters.
- HAL_GPIO_WritePin(GPIOB,GPIO_PIN_6,GPIO_PIN_RESET);HAL_Delay(1);
- HAL_GPIO_WritePin(GPIOB,GPIO_PIN_7,GPIO_PIN_RESET);HAL_Delay(1);
- HAL_GPIO_WritePin(GPIOB,GPIO_PIN_6,GPIO_PIN_SET);HAL_Delay(1);
- HAL_GPIO_WritePin(GPIOB,GPIO_PIN_7,GPIO_PIN_SET);HAL_Delay(1);
- g.Mode=GPIO_MODE_AF_OD;HAL_GPIO_Init(GPIOB,&g);
- SET_BIT(hi2c1.Instance->CR1,I2C_CR1_SWRST);__NOP();CLEAR_BIT(hi2c1.Instance->CR1,I2C_CR1_SWRST);
- hi2c1.State=HAL_I2C_STATE_RESET;HAL_I2C_Init(&hi2c1);i2c_recoveries++;
+ i2c_error=(uint32_t)soft_i2c_recover(&bus);i2c_recoveries++;
 }
 #include "oled_test.h"
 static int bcd(uint8_t x){return (x>>4)*10+(x&15);}
@@ -180,14 +177,14 @@ static void rtc_set_poll(void){
  if(rtc_sync_pending){
   if((uint32_t)(HAL_GetTick()-rtc_sync_started)<2000)return;
   uint8_t b[7],status;
-  if(HAL_I2C_Mem_Read(&hi2c1,0x68<<1,0,1,b,7,30)!=HAL_OK)goto failed;
+  if(bus_read_register(0x68,0,b,7)!=HAL_OK)goto failed;
   MenuDate d={(uint16_t)(2000+bcd(b[6])),(uint8_t)bcd(b[5]),(uint8_t)bcd(b[4]),(uint8_t)bcd(b[2]),(uint8_t)bcd(b[1]),(uint8_t)bcd(b[0])};
   uint32_t epoch=calendar_valid(&d)?calendar_seconds(&d):0;
   if(epoch<=rtc_sync_epoch||epoch-rtc_sync_epoch>5){rtc_set_request.result=5;rtc_sync_pending=0;return;}
-  if(HAL_I2C_Mem_Read(&hi2c1,0x68<<1,15,1,&status,1,20)!=HAL_OK)goto failed;
+  if(bus_read_register(0x68,15,&status,1)!=HAL_OK)goto failed;
   status&=0x7f;
-  if(HAL_I2C_Mem_Write(&hi2c1,0x68<<1,15,1,&status,1,20)!=HAL_OK)goto failed;
-  if(HAL_I2C_Mem_Read(&hi2c1,0x68<<1,15,1,&status,1,20)!=HAL_OK)goto failed;
+  if(bus_write_register(0x68,15,&status,1)!=HAL_OK)goto failed;
+  if(bus_read_register(0x68,15,&status,1)!=HAL_OK)goto failed;
   if(status&0x80){rtc_set_request.result=5;rtc_sync_pending=0;return;}
   rtc_sync_pending=0;rtc_set_request.result=2;rtc_health.initialized=0;rtc_health.progress=0;rtc_health.fault=0;
   last_known_epoch=epoch;menu.persist_dirty=1;display_dirty=1;
@@ -202,22 +199,22 @@ static void rtc_set_poll(void){
  if(!valid){rtc_set_request.result=3;return;}
  analytics_gap(&analytics);
  uint8_t ctrl,verify[7];
- if(HAL_I2C_Mem_Read(&hi2c1,0x68<<1,14,1,&ctrl,1,20)!=HAL_OK)goto failed;
+ if(bus_read_register(0x68,14,&ctrl,1)!=HAL_OK)goto failed;
  ctrl&=0x7f;
- if(HAL_I2C_Mem_Write(&hi2c1,0x68<<1,14,1,&ctrl,1,20)!=HAL_OK)goto failed;
- if(HAL_I2C_Mem_Write(&hi2c1,0x68<<1,0,1,b,7,30)!=HAL_OK)goto failed;
- if(HAL_I2C_Mem_Read(&hi2c1,0x68<<1,0,1,verify,7,30)!=HAL_OK)goto failed;
+ if(bus_write_register(0x68,14,&ctrl,1)!=HAL_OK)goto failed;
+ if(bus_write_register(0x68,0,b,7)!=HAL_OK)goto failed;
+ if(bus_read_register(0x68,0,verify,7)!=HAL_OK)goto failed;
  if(memcmp(b,verify,7)!=0){rtc_set_request.result=5;return;}
  rtc_sync_pending=1;rtc_sync_started=HAL_GetTick();rtc_sync_epoch=calendar_seconds(&d);return;
 failed:
- rtc_sync_pending=0;rtc_set_request.error=HAL_I2C_GetError(&hi2c1);rtc_set_request.result=4;i2c_recover();
+ rtc_sync_pending=0;rtc_set_request.error=i2c_error;rtc_set_request.result=4;i2c_recover();
 }
 static void rtc_read(void){
  uint8_t fresh[19]={0};uint32_t now=HAL_GetTick();rtc_diag.reads++;
  // Separate time and health reads avoid a long burst through alarm/reserved registers.
- int ok=HAL_I2C_Mem_Read(&hi2c1,0x68<<1,0,1,fresh,7,30)==HAL_OK;
- if(ok)ok=HAL_I2C_Mem_Read(&hi2c1,0x68<<1,14,1,fresh+14,2,20)==HAL_OK;
- if(ok)ok=HAL_I2C_Mem_Read(&hi2c1,0x68<<1,17,1,fresh+17,2,20)==HAL_OK;
+ int ok=bus_read_register(0x68,0,fresh,7)==HAL_OK;
+ if(ok)ok=bus_read_register(0x68,14,fresh+14,2)==HAL_OK;
+ if(ok)ok=bus_read_register(0x68,17,fresh+17,2)==HAL_OK;
  rtc_health_sample(&rtc_health,fresh,ok,now);
  if(!ok){rtc_diag.errors++;i2c_recover();snprintf(rtc_diag.state,sizeof rtc_diag.state,"RTC READ ERROR");}
  else{
@@ -477,7 +474,7 @@ int main(void){
  if(linked&&(uint32_t)(now-lastpeer)>15000){linked=0;logmsg("UART/WARN","Link timeout");}
  if(linked&&(uint32_t)(now-heartbeat)>=1000){heartbeat=now;uint8_t b[200];MenuLive l=menu_live();unsigned n=remote_state(b,&menu,&l,alarms.test_active);sendcontrol(CT_STATE,0,b,n);n=analytics_packet(b,&analytics.data,0,0,0);ct_put32(b+n,history_revision());sendcontrol(CT_ANALYTICS,0,b,n+4);}
 
- if(ENABLE_I2C_DIAGNOSTICS && scan<120 && (uint32_t)(now-rtc)>=20){rtc=now;if(HAL_I2C_IsDeviceReady(&hi2c1,scan<<1,1,2)==HAL_OK)logmsg("I2C/INFO","Found 7-bit=0x%02X",scan);scan++;}
+ if(ENABLE_I2C_DIAGNOSTICS && scan<120 && (uint32_t)(now-rtc)>=20){rtc=now;if(bus_probe(scan)==HAL_OK)logmsg("I2C/INFO","Found 7-bit=0x%02X",scan);scan++;}
  if(ENABLE_I2C_DIAGNOSTICS && scan==120){oled_init();scan++;rtc=now-1000;}
  if(ENABLE_I2C_DIAGNOSTICS && scan>120 && (uint32_t)(now-rtc)>=1000){rtc=now;rtc_read();}
  alarm_service();remote_poll();display_refresh();

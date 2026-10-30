@@ -10,6 +10,7 @@
 6. [Validation and troubleshooting](validation.md)
 7. [Development integration notes](17-local-control-and-validation.md)
 8. [Activity dashboard and measurement definitions](19-activity-dashboard.md)
+9. [Rewiring recovery and current bench status](20-rewiring-recovery.md)
 
 Also see [host tests](../tests/README.md), [contributing](../CONTRIBUTING.md), [local access/security](../SECURITY.md) and [third-party notices](../THIRD_PARTY_NOTICES.md).
 
@@ -17,4 +18,4 @@ Also see [host tests](../tests/README.md), [contributing](../CONTRIBUTING.md), [
 
 Documents numbered **01–16** and the original `diagrams/` files preserve the project's wiring investigation and intermediate firmware milestones. They contain superseded statements such as RAM-only schedules, protocol v1, unimplemented OLED menus, conditional pins or a quiet/expiry behavior that is no longer current. Do not follow them as the current installation sequence. The guides above and actual firmware take precedence.
 
-Current firmware labels are STM32 `1.2.0-activity` and ESP32 `1.1.0-activity`. Notes 17/18 preserve the UI/integration milestone; guide 19 describes the new activity measurements. A clock running on USB still does not certify the known RTC backup battery issue.
+Current firmware labels are STM32 `1.2.1-recovery` and ESP32 `1.1.0-activity`. Notes 17/18 preserve the UI/integration milestone; guide 19 describes activity measurements, and guide 20 records the latest rewiring failures and recovery changes. A clock running on USB still does not certify the known RTC backup battery issue.

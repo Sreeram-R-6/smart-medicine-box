@@ -7,6 +7,8 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
 TESTS = {
+    'oled_driver': ([], ['tests/oled_driver_test.c']),
+    'soft_i2c': (['soft_i2c'], ['tests/soft_i2c_test.c']),
     'protocol': ([], ['tests/protocol_test.c']),
     'menu': (['menu'], ['tests/menu_test.c']),
     'alarm': (['menu', 'calendar', 'alarm', 'rtc_health', 'persistence', 'analytics'], ['tests/alarm_test.c']),
@@ -31,7 +33,7 @@ def main():
         print('Building ' + name, flush=True)
         subprocess.run([compiler, '-std=c11', '-Wall', '-Wextra', '-Werror', '-Ishared', '-Ifirmware/stm32', *sources, '-o', str(binary)], cwd=ROOT, check=True)
         subprocess.run([str(binary)], cwd=ROOT, check=True)
-    print('All six host C test suites passed.', flush=True)
+    print('All eight host C test suites passed.', flush=True)
 
 
 if __name__ == '__main__':

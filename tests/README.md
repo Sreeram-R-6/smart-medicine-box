@@ -42,4 +42,6 @@ python tools/render_oled_previews.py
 
 This checks upcoming reminders across weekday/midnight boundaries, supported-calendar bounds and grouped alarms, guards framebuffer memory, and produces 23 exact pixel previews for visual review.
 
-The recommended `python tools/test_host.py` entry point runs all six C suites, including `analytics_test.c`. Activity checks cover real-event timing/count semantics, grouping/deduplication, manual-report conflicts, reboot uncertainty, record rotation, generation matching and schema-1 migration. Dashboard fixtures additionally verify sample-aware averages, lid/report separation, filtering and disabled stale-record controls.
+The recommended `python tools/test_host.py` entry point runs all eight C suites, including `analytics_test.c`. Activity checks cover real-event timing/count semantics, grouping/deduplication, manual-report conflicts, reboot uncertainty, record rotation, generation matching and schema-1 migration. Dashboard fixtures additionally verify sample-aware averages, lid/report separation, filtering and disabled stale-record controls.
+
+Transport checks exercise ACK/NACK, repeated-start register reads, bounded clock stretching and stuck lines (`soft_i2c_test.c`), plus partially accepted OLED writes, exact-column retries, shadow integrity and reconnect (`oled_driver_test.c`). These use mocked electrical interfaces and do not replace bench acceptance.

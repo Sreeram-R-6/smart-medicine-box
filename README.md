@@ -4,7 +4,9 @@
 
 A working STM32 medicine-reminder prototype with an animated OLED interface and an ESP32-C3 local web dashboard. The STM32 runs the reminders independently; the ESP32 lets a phone view status and update the same saved configuration over UART.
 
-**STM32:** `1.2.0-activity` · **ESP32:** `1.1.0-activity` · **Build:** PlatformIO · **Cloud:** not required
+**STM32:** `1.2.1-recovery` · **ESP32:** `1.1.0-activity` · **Build:** PlatformIO · **Cloud:** not required
+
+**Current bench status:** after rewiring, RTC time and the UART link recovered, but OLED communication remains intermittent. See [recovery changes and unresolved hardware checks](docs/20-rewiring-recovery.md). Earlier screen images do not certify the rewired assembly.
 
 ![OLED screens rendered by the actual firmware](docs/assets/oled-ui-preview.png)
 

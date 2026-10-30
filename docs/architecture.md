@@ -18,7 +18,7 @@ flowchart LR
 
 The controller uses STM32Cube HAL, an 8 MHz HSI clock and a cooperative main loop. There is no RTOS. UART interrupts move bytes through bounded buffers; the loop parses frames, debounces input, handles the OLED, samples the RTC, advances alarms and commits changed data.
 
-OLED transfers are paced and update changed pages. I²C operations have finite timeouts. A stuck bus is recovered by releasing the lines, clocking the bus and resetting the I²C peripheral. OLED initialization retries after failures. Boot animation frames do not block scheduling or UART processing.
+OLED transfers are paced and update changed pages. The GPIO open-drain I²C transport has bounded clock-stretch waits and recovers by releasing the lines, sending up to nine clock pulses and a STOP. It does not use the F1 I²C peripheral. OLED initialization retries after failures; frame chunks restore their page/column before retransmission. Boot animation frames do not block scheduling or UART processing.
 
 TIM3 channel 3 generates the buzzer carrier. The loop selects the melody note by elapsed monotonic time; flash erase is preceded by silence so a CPU stall does not stretch a driven note. An opening information tone is separate from the medicine alarm sound.
 
@@ -64,6 +64,7 @@ History and analytics are polled with generation tags. The receiver rejects mism
 | --- | --- |
 | `firmware/stm32/main.c` | HAL setup, cooperative services, input/UART integration |
 | `menu.c`, `menu.h` | Hardware-independent button/menu state and drafts |
+| `soft_i2c.c`, `soft_i2c.h` | Single-master GPIO bus, register transfers and bounded bus recovery |
 | `screen.c`, `upcoming.c` | Pixel rendering, boot frames and next reminder |
 | `calendar.c`, `rtc_health.c` | Calendar arithmetic and trust checks |
 | `alarm.c` | Occurrence groups, deduplication, melody and acknowledgment |

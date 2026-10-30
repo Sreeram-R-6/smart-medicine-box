@@ -63,7 +63,7 @@ On a four-leg tactile switch, the two legs on each internal contact are already 
 | SDA | B7 |
 | RTC SQW/INT, 32K | Disconnected |
 
-RTC and OLED share the same bus. Firmware uses a conservative **25 kHz** I²C clock, bounded transactions, bus recovery and OLED retries. Keep breadboard wiring short and check pull-ups before changing bus speed.
+RTC and OLED share the same bus. Firmware uses GPIO open-drain I²C at **at most 12.5 kHz**, bounded clock-stretch waits, bus recovery and OLED retries. Keep breadboard wiring short and check pull-ups before changing bus speed. See the [latest rewiring results](20-rewiring-recovery.md) for current unresolved OLED failures.
 
 The tested RTC backup cell measured 1.8 V and did not retain time. DS3231 specifies a minimum 2.3 V backup input. Replace a depleted cell and inspect polarity/holder contacts. Use a CR2032 only when the module does not charge it; a charging module needs the appropriate modification or battery type. Re-sync and perform an actual power-off test after replacement.
 

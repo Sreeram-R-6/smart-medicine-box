@@ -15,6 +15,8 @@ The C runner uses GCC by default; pass `--cc clang` or a full executable path if
 
 | Suite | Coverage |
 | --- | --- |
+| Software I²C | ACK/NACK, repeated-start reads, register writes, stretch/stuck-line bounds and recovery |
+| OLED transport | Partial-write readdressing, shadow integrity, retries, reconnect and full redraw |
 | Protocol | Shared diagnostic framing/parser and CRC |
 | Menu | Navigation, calendar edits, draft cancellation, names/days, save errors, history wrap and 100,000 navigation/render steps |
 | Alarm/storage/RTC | Calendar round trips, duplicate suppression, groups, fresh lid cycles, reboot/clock gaps, repeating melody, trust failures, CRC, torn commit/fallback and sequence wrap |
@@ -24,6 +26,10 @@ The C runner uses GCC by default; pass `--cc clang` or a full executable path if
 | Dashboard | Actual shipped script with DOM/network fixtures: safe text rendering, weekday editor, revision/token POST, ACK/readback success and offline controls |
 
 GitHub Actions runs the host checks and compiles both targets. It never flashes connected hardware. A green CI run does not validate electrical wiring, radio range, sound, battery retention or actual pill taking.
+
+## Latest assembly status
+
+The 2026-10-30 rewiring check recovered RTC time and UART communication, but OLED transfers still fail. See [current results and recovery changes](20-rewiring-recovery.md). Earlier successful checks below apply to the previous assembly.
 
 ## Bench evidence
 

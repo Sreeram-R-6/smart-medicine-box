@@ -19,6 +19,10 @@ int main(void){
  assert(soft_i2c_write(&bus,0x3c,&value,1)==0);assert(index_==4&&scl&&sda);
  unsigned nack[]={1,1,1};reset(nack,3);
  assert(soft_i2c_write(&bus,0x3c,&value,1)==SOFT_I2C_NACK);assert(index_==3&&scl&&sda);
+ assert(soft_i2c_write_failed_byte==0);
+ unsigned payload_nack[]={1,0,1,1};reset(payload_nack,4);
+ assert(soft_i2c_write(&bus,0x3c,&value,1)==SOFT_I2C_NACK);
+ assert(soft_i2c_write_failed_byte==1);
  unsigned reg_write[]={1,0,0,0,1};reset(reg_write,5);
  assert(soft_i2c_write_register(&bus,0x68,15,&value,1)==0);assert(index_==5);
  unsigned read_ok[]={1,0,0,1,0,1,0,1,0,0,1,0,1,0,1,0,1,1,0,1,0,1};
@@ -27,6 +31,7 @@ int main(void){
  assert(bytes[0]==0xa5&&bytes[1]==0x5a&&index_==22&&scl&&sda);
  unsigned held_data[]={0,0};reset(held_data,2);
  assert(soft_i2c_write(&bus,0x68,0,0)==SOFT_I2C_SDA_LOW);assert(scl&&sda);
+ assert(soft_i2c_write_failed_byte==UINT32_MAX);
  unsigned released[]={1};reset(released,1);stuck_scl=1;
  assert(soft_i2c_write(&bus,0x68,0,0)==SOFT_I2C_SCL_LOW);
  assert(clock_reads==400&&delays<410&&scl&&sda);

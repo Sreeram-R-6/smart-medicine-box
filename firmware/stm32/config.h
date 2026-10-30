@@ -1,6 +1,6 @@
 #pragma once
 #include "stm32f1xx_hal.h"
-#define FW_VERSION "1.2.1-recovery"
+#define FW_VERSION "1.2.2-oled-startup"
 #define BUTTON_PORT GPIOA
 static const uint16_t BUTTON_PINS[4] = {GPIO_PIN_0,GPIO_PIN_1,GPIO_PIN_4,GPIO_PIN_5};
 #define SENSOR_PORT GPIOB

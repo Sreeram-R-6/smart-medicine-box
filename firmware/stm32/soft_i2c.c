@@ -1,4 +1,5 @@
 #include "soft_i2c.h"
+volatile uint32_t soft_i2c_write_failed_byte;
 static int high(const SoftI2c *b){
  b->scl(1);
  for(unsigned i=0;i<200;i++){if(b->read_scl()){b->delay();return 0;}b->delay();}
@@ -33,9 +34,11 @@ static int get(const SoftI2c *b,uint8_t *x,int last){
 }
 static int finish(const SoftI2c *b,int error){int e=stop(b);return error?error:e;}
 int soft_i2c_write(const SoftI2c *b,uint8_t a,const uint8_t *p,unsigned n){
- int e=start(b);if(!e)e=put(b,(uint8_t)(a<<1));
- for(unsigned i=0;!e&&i<n;i++)e=put(b,p[i]);
- return finish(b,e);
+ int e=start(b);if(e)soft_i2c_write_failed_byte=UINT32_MAX;
+ if(!e){e=put(b,(uint8_t)(a<<1));if(e)soft_i2c_write_failed_byte=0;}
+ for(unsigned i=0;!e&&i<n;i++){e=put(b,p[i]);if(e)soft_i2c_write_failed_byte=i+1;}
+ int result=finish(b,e);if(!e&&result)soft_i2c_write_failed_byte=UINT32_MAX;
+ return result;
 }
 int soft_i2c_write_register(const SoftI2c *b,uint8_t a,uint8_t reg,const uint8_t *p,unsigned n){
  int e=start(b);if(!e)e=put(b,(uint8_t)(a<<1));if(!e)e=put(b,reg);

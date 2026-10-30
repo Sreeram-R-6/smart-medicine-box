@@ -306,7 +306,7 @@ void menu_render(const Menu *m,const MenuLive *l,MenuFrame *f){
   row(f,0,"DIAGNOSTICS");row(f,1,"RTC OSF %lu CHECK %lu/3",(unsigned long)l->rtc_osf,(unsigned long)l->clock_progress);
   row(f,2,"I2C ERR O%lu R%lu",(unsigned long)l->oled_errors,(unsigned long)l->rtc_errors);
   row(f,3,"STORAGE %s",l->storage_ok?"OK":"ERROR");row(f,4,"ESP LINK %s",l->link_up?"UP":"DOWN");
-  row(f,5,"UPTIME %lu S",(unsigned long)(l->uptime/1000));row(f,6,"FW 1.2.1");row(f,7,"BACK SETTINGS");break;
+  row(f,5,"UPTIME %lu S",(unsigned long)(l->uptime/1000));row(f,6,"FW 1.2.2");row(f,7,"BACK SETTINGS");break;
  case UI_NOTICE:
   row(f,0,"RESULT");row(f,3,"%s",m->notice);row(f,4,"%s",m->notice_detail);row(f,7,"OK OR BACK RETURN");break;
  }

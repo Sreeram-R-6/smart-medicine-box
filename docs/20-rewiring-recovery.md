@@ -1,5 +1,13 @@
 # Rewiring recovery and current bench status
 
+## Firmware 1.2.2-oled-startup
+
+The display is now kept OFF during initialization and the first complete framebuffer upload. Only after all pages have been acknowledged does the driver send display-ON. Idle health probes cannot light uninitialized memory. Failed initialization or display-ON retries the full sequence; reconnect still forces a full redraw. This prevents software from deliberately exposing stale/random display RAM before the first successful frame, but cannot clear a physically unreachable panel.
+
+Raw-write diagnostics now identify whether a failed byte is the address, control byte or later payload. The bench repeatedly observed address acknowledgment followed by control-byte NACK. Alternative hardware-I2C and earlier-sampling trials did not restore completed frames and were removed. Host tests cover the startup display-OFF gate, partial writes, display-ON failure and full reconnect/redraw.
+
+The user measured 3.3 V at the STM32 and 2.8 V across the OLED connector, including after reporting direct power wires. That discrepancy is recorded as an unresolved electrical observation, not a confirmed diagnosis of a particular component. The user also reported garbled/static pixels. Reliable OLED acceptance and every-boot operation remain **unverified/failing**; reprogramming has not established a hardware pass.
+
 ## Firmware 1.2.1-recovery
 
 After the assembly was rewired, both the RTC and OLED transfers failed with the prior image. The original image was read back and matched the rebuilt binary exactly; this was not an accidental firmware overwrite. The STM32 supply measured approximately 3.29 V at the programmer, which does **not** measure the supply at either module.
